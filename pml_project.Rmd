@@ -1,0 +1,141 @@
+---
+title: "Practical Machine Learning - Recognition of Weight Lifting Exercises"
+author: "Gavin Patterson"
+date: "October 26, 2014"
+output: html_document
+---
+
+## Summary
+The purpose of the project is to design a model that will predict the manner
+in which an exercise was performed.  Using a Random Forest algorithm, the
+model predicts the outcome on the test set with 100% accuracy.  
+
+# Steps in building the model
+## 1. Loading of the data
+Data was downloaded into training and test sets.  Blank fields were 
+converted to NA to make it easy to identify and remove further in the process.
+```{r loading, cache=TRUE, warning=FALSE}
+rm(list=ls())
+
+library(caret)
+
+
+# DOWNLOAD TRAINING AND TESTING DATA
+#download.file('http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv', 
+#              'ds.csv')
+
+trainDS <- read.csv(file="./ds.csv", 
+                      na.strings=c("", "NA"), 
+                      header=TRUE,
+                      sep=",") 
+
+#download.file('http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv', 
+#              'tds.csv')
+
+testDS <- read.csv(file="./tds.csv", 
+                     na.strings=c("", "NA"), 
+                     header=TRUE,
+                     sep=",") 
+```
+
+
+## 2. Cross Validation
+Cross validation was done using a 60/40 split on the training data set.  
+60 percent of the training data was used to fit the model and 40 percent
+was used to validate the model.  The testing set cannot be used to train
+or validate the model or it would become part of the training set.  We therefore
+estimate the testing set accuracy with the training set.
+```{r cross_val}
+     
+     library(caret)
+     
+     inTrain = createDataPartition(trainDS$classe,p=.6)[[1]]
+     training = trainDS[inTrain,]
+     validating = trainDS[-inTrain,]
+
+```
+
+## 3. Preprocessing 
+With a large number of variables in the training set, it is important to 
+reduce noise by identifying the most relevant variables and removing variables
+that can mislead the algorithm.  In this case, any variable that was missing 
+one third of its data was removed from the training set.  In addition to this,
+row identifiers, user names and time stamps are removed as this is irrelevant
+to identifying the outcome.  Preprocessing was performed equally across the
+training, validating and testing sets.
+```{r preproces}
+
+# identify blank and NA columns that are missing over 1/3 of their data
+inTrim <- c((colSums(!is.na(training[,-ncol(training)])) >= (1/3)*nrow(training)))
+
+# trim the columns based on index trim variable
+training <- training[,inTrim]
+validating <- validating[,inTrim]
+
+# remove identifier column, usernames and time stamps
+training <- training[,-c(1,2,3,4)]
+validating <- validating[,-c(1,2,3,4)]
+
+
+testData <-testDS
+testData <- testData[,inTrim] # trim columns to match training set
+
+# remove identifier column, usernames, time stamps and 'problem id' column
+testData <- testData[,-c(1,2,3,4, 60)]
+
+testData<- data.frame(testData, classe='' ) # add 'classe' column
+
+# added a random row from the training dataset to check that the structures
+# match and force the dataframe to include row names
+testing <- rbind(testData, training[50,])          
+testing <- testing[-nrow(testing),] # remove the temporary record
+
+```
+
+
+## 4. Fit the model
+The Random Forest algorithm was used to fit the model.  This was chosen
+for it's high degree of accuracy.  The call was made directly to the 
+randomForest() function instead of the caret() package as this ran considerably
+faster.  
+```{r model_fit}
+
+     library(randomForest)
+
+     # fit models to training data
+     fitMod <- randomForest(classe ~., data=training)
+     print(fitMod)
+```
+
+# 5. Estimating error on the out of sample set
+A subset of the training set was used for validation.  Based on this, one can
+infer what the out of sample accuracy rate will be.  The accuracy rate on the
+set was exceptionally high with a value of 99.8% and an error rate of
+0.29%.  This rate would be expected to persist out of sample. 
+```{r pred_val}
+     pred<-predict(fitMod, validating)
+     confusionMatrix(pred, validating$classe)
+```
+
+# 6. Predict on testing data set and write to seperate text files
+Since the outcome variable (classe) is removed from the testing set, one cannot
+confirm the accuracy of the testing data against the model without submitting
+to the Coursera site.  20 test cases are included in the testing set and
+written into seperate files to simplify the uploading process.
+```{r pred_test}
+
+testPred<-predict(fitMod, testing)
+print(testPred)
+
+# Write the predictions to file
+     
+     pml_write_files = function(x){
+     n = length(x)
+     for(i in 1:n){
+          filename = paste0("problem_id_",i,".txt")
+          write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+     }
+     
+     pml_write_files(testPred) # call the function to write predictions to file
+}
+```
